@@ -2,6 +2,7 @@ package com.engineai.crfe.infrastructure.controller;
 
 import com.engineai.crfe.application.service.CashflowForecastService;
 import com.engineai.crfe.domain.model.CashflowForecast;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
@@ -21,6 +22,15 @@ public class CashflowForecastController {
     @ResponseStatus(HttpStatus.CREATED)
     public CashflowForecast create(@RequestBody CreateCashflowForecastRequest request) {
         return cashflowForecastService.create(request);
+    }
+
+    @PostMapping("/generate")
+    @ResponseStatus(HttpStatus.CREATED)
+    public CashflowForecast generate(
+            @RequestParam Long userId,
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authorizationHeader
+    ) {
+        return cashflowForecastService.generateFromTransactions(userId, authorizationHeader);
     }
 
     @GetMapping

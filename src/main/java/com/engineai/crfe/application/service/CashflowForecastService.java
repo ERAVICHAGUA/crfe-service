@@ -4,6 +4,8 @@ import com.engineai.crfe.domain.model.CashflowForecast;
 import com.engineai.crfe.domain.model.RiskAlert;
 import com.engineai.crfe.domain.repository.CashflowForecastRepository;
 import com.engineai.crfe.domain.repository.RiskAlertRepository;
+import com.engineai.crfe.infrastructure.client.TiieClient;
+import com.engineai.crfe.infrastructure.client.TransactionResponse;
 import com.engineai.crfe.infrastructure.controller.CreateCashflowForecastRequest;
 import org.springframework.stereotype.Service;
 
@@ -17,13 +19,16 @@ public class CashflowForecastService {
 
     private final CashflowForecastRepository cashflowForecastRepository;
     private final RiskAlertRepository riskAlertRepository;
+    private final TiieClient tiieClient;
 
     public CashflowForecastService(
             CashflowForecastRepository cashflowForecastRepository,
-            RiskAlertRepository riskAlertRepository
+            RiskAlertRepository riskAlertRepository,
+            TiieClient tiieClient
     ) {
         this.cashflowForecastRepository = cashflowForecastRepository;
         this.riskAlertRepository = riskAlertRepository;
+        this.tiieClient = tiieClient;
     }
 
     public CashflowForecast create(CreateCashflowForecastRequest request) {
@@ -44,26 +49,64 @@ public class CashflowForecastService {
                 .build();
 
         CashflowForecast savedForecast = cashflowForecastRepository.save(forecast);
+        maybeCreateRiskAlert(savedForecast);
 
-        if (balance.compareTo(new BigDecimal("100.00")) < 0) {
-            RiskAlert riskAlert = RiskAlert.builder()
-                    .userId(savedForecast.getUserId())
-                    .alertType(balance.compareTo(BigDecimal.ZERO) < 0 ? "NEGATIVE_BALANCE" : "LOW_LIQUIDITY")
-                    .riskLevel(balance.compareTo(BigDecimal.ZERO) < 0 ? "HIGH" : "MEDIUM")
-                    .alertMessage(buildAlertMessage(balance))
-                    .forecast(savedForecast)
-                    .triggeredAt(LocalDateTime.now())
-                    .status("ACTIVE")
-                    .build();
+        return savedForecast;
+    }
 
-            riskAlertRepository.save(riskAlert);
-        }
+    public CashflowForecast generateFromTransactions(Long userId, String bearerToken) {
+        List<TransactionResponse> transactions = tiieClient.getTransactionsByUserId(userId, bearerToken);
+
+        BigDecimal totalIncome = transactions.stream()
+                .filter(t -> "income".equalsIgnoreCase(t.type()))
+                .map(TransactionResponse::amount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal totalExpense = transactions.stream()
+                .filter(t -> "expense".equalsIgnoreCase(t.type()))
+                .map(TransactionResponse::amount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal balance = totalIncome.subtract(totalExpense);
+
+        CashflowForecast forecast = CashflowForecast.builder()
+                .userId(userId)
+                .forecastDate(LocalDate.now().plusDays(30))
+                .periodType("monthly")
+                .projectedIncome(totalIncome)
+                .projectedExpense(totalExpense)
+                .projectedBalance(balance)
+                .confidenceScore(resolveConfidence(balance))
+                .forecastMethod("tiie-aggregation")
+                .status("GENERATED")
+                .build();
+
+        CashflowForecast savedForecast = cashflowForecastRepository.save(forecast);
+        maybeCreateRiskAlert(savedForecast);
 
         return savedForecast;
     }
 
     public List<CashflowForecast> findByUserId(Long userId) {
         return cashflowForecastRepository.findByUserIdOrderByForecastDateDesc(userId);
+    }
+
+    private void maybeCreateRiskAlert(CashflowForecast forecast) {
+        BigDecimal balance = forecast.getProjectedBalance();
+
+        if (balance.compareTo(new BigDecimal("100.00")) < 0) {
+            RiskAlert riskAlert = RiskAlert.builder()
+                    .userId(forecast.getUserId())
+                    .alertType(balance.compareTo(BigDecimal.ZERO) < 0 ? "NEGATIVE_BALANCE" : "LOW_LIQUIDITY")
+                    .riskLevel(balance.compareTo(BigDecimal.ZERO) < 0 ? "HIGH" : "MEDIUM")
+                    .alertMessage(buildAlertMessage(balance))
+                    .forecast(forecast)
+                    .triggeredAt(LocalDateTime.now())
+                    .status("ACTIVE")
+                    .build();
+
+            riskAlertRepository.save(riskAlert);
+        }
     }
 
     private BigDecimal defaultAmount(BigDecimal value) {
