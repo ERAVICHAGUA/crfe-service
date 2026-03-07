@@ -1,0 +1,26 @@
+# Maven / build
+target
+*.log
+
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile
+docker-compose.yml
+
+# Node (por si algún día mezclas frontend)
+node_modules
+
+# Env files
+.env

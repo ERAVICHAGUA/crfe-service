@@ -1,0 +1,15 @@
+logsBucket: "gs://cloudbuild-logs-ec71bfb1"
+
+options:
+  logging: GCS_ONLY
+
+steps:
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "build"
+      - "-t"
+      - "us-central1-docker.pkg.dev/project-ec71bfb1-d784-43f4-838/engineai/crfe:latest"
+      - "."
+
+images:
+  - "us-central1-docker.pkg.dev/project-ec71bfb1-d784-43f4-838/engineai/crfe:latest"
